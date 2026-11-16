@@ -1,20 +1,30 @@
+# GitHub repositories are now mirror only
+
+Due to recent changes in GitHub's direction, development has migrated to: https://git.ribas89.co.uk/
+
+Have a issue/question? https://link.ribas89.co.uk/ask
+
+
+Thank you for your support ❤️!
+
+
 # Sleep-On-LAN (SOL)
 
 ## Principle
 
 Wake-on-LAN is a standard low-level protocol implemented in various hardware. At this time, there is not standard to make the opposite and send a computer in sleep mode.
 
-This project allows a windows or linux box to be put into sleep from any other device. 
+This project allows a windows, linux or macOS computer to be put into sleep from any other device. 
 
 It works with the exact same magic packet than for Wake-On-LAN, the only difference is that the MAC address has to be written in reverse order.
 
 Technically, you have to run a little daemon (the `sleep-on-lan` program on your computeri, server, NAS, ... that will listen the same Wake-On-LAN port and send the computer in sleep mode when the reversed MAC address received matches a local address. Additionnaly, it can also be triggered through a REST endpoint (with something like `curl`). Executed commands are fully customizable.
 
-Written in `go`, the code shoud run on linux and windows platforms.
+Written in `go`, the code shoud run on linux, windows and macOS platforms.
 
 ## Usage
 
-Grab the latest windows + linux release or snapshot : https://github.com/SR-G/sleep-on-lan/releases/
+Grab the latest windows, linux + macOS release or snapshot : https://github.com/ribas89/sleep-on-lan-macos/releases/
 
 ### Sleep through UDP
 
@@ -127,7 +137,7 @@ Default output from REST command is `XML` but may be switched from a configurati
 
 **Commands** defines the available commands.
 
-By default, on both windows and linux, only one command is defined : sleep command (through `systemctl suspend` on (recent) systemd linux, `pm-suspend` on (old) linux and a DLL API call on windows).
+By default, on windows, linux and macOS, only one command is defined : sleep command (through `systemctl suspend` on (recent) systemd linux, `pm-suspend` on (old) linux, `pmset sleepnow` on macOS and a DLL API call on windows).
 
 You may customize / override this behavior, or add new commands (that will then be available under `http://<IP>:<HTTP PORT>/<operation>` if a HTTP listener is defined), if needed.
 
@@ -202,6 +212,19 @@ C:\Tools\nssm\2.24\win64\nssm.exe set SleepOnLan AppStderr "C:\Tools\SleepOnLan\
 
 Reference : [nssm](https://nssm.cc/usage)
 
+### Under macOS
+
+Download `SleepOnLAN_vX.Y.Z_macos_arm64.zip` for Apple Silicon or `SleepOnLAN_vX.Y.Z_macos_amd64.zip` for Intel from the [releases](https://github.com/ribas89/sleep-on-lan-macos/releases/).
+
+Extract the archive and run `sol` from its folder:
+
+```bash
+chmod +x sol
+sudo ./sol
+```
+
+The default sleep command is `pmset sleepnow`.
+
 ### Under Linux
 
 #### Port & rights on processes
@@ -255,7 +278,7 @@ You may of course daemonize the process or launch it through an external monitor
 Just launch `sol help` : 
 
 ```
-Sleep-On-LAN - Daemon allowing to send a linux or windows computer to sleep
+Sleep-On-LAN - Daemon allowing to send a linux, windows or macOS computer to sleep
 
   Usage:
     Sleep-On-LAN [generate-configuration]
@@ -383,14 +406,6 @@ make run
 
 ### Release procedure
 
-- Update release version in makefile
-- Commit everything & create new tag
-```bash
-git add .
-git commit -m"Prepare 1.1.0 RELEASE"
-git push origin master
-git tag 1.1.0-RELEASE 
-git push origin 1.1.0-RELEASE 
-```
-- Create distribution `export GOPATH=~/go/ ; make distribution` and upload the ZIP generated under `bin/*.zip` on GitHub
-- Change Makefile (increase number, switch back to SNAPSHOT)
+- Update `VERSION` in the Makefile and commit/push changes.
+- Run `Build and release Sleep-On-LAN macos` manually from GitHub Actions.
+- The workflow creates a lightweight version tag and publishes Linux, Windows and macOS ZIPs on GitHub Releases.

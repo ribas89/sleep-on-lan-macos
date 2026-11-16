@@ -4,7 +4,7 @@ SOURCES := $(shell find $(SOURCEDIR) -name '*.go')
 BINARY=sol
 PWD := $(shell pwd)
 
-VERSION=1.1.2
+VERSION=2.0.1
 VERSION_LABEL=SNAPSHOT
 PACKAGE=sleep-on-lan
 DISTRIBUTION_PACKAGE=SleepOnLAN-${VERSION}-${VERSION_LABEL}
@@ -44,19 +44,23 @@ run:
 
 # DEV / Create ZIP 
 distribution: install
-	mkdir -p bin/linux_amd64/ bin/linux_386/ bin/linux_arm64/ bin/linux_arm/ bin/windows_amd64/ bin/windows_386/
+	mkdir -p bin/linux_amd64/ bin/linux_386/ bin/linux_arm64/ bin/linux_arm/ bin/windows_amd64/ bin/windows_386/ bin/darwin_amd64/ bin/darwin_arm64/
 	cp ${GOPATH}/bin/${PACKAGE} bin/linux_amd64/sol
 	cp ${GOPATH}/bin/linux_arm64/${PACKAGE} bin/linux_arm64/sol
 	cp ${GOPATH}/bin/linux_386/${PACKAGE} bin/linux_386/sol
 	cp ${GOPATH}/bin/linux_arm/${PACKAGE} bin/linux_arm/sol
 	cp ${GOPATH}/bin/windows_amd64/${PACKAGE}.exe bin/windows_amd64/sol.exe
 	cp ${GOPATH}/bin/windows_386/${PACKAGE}.exe bin/windows_386/sol.exe
+	cp ${GOPATH}/bin/darwin_amd64/${PACKAGE} bin/darwin_amd64/sol
+	cp ${GOPATH}/bin/darwin_arm64/${PACKAGE} bin/darwin_arm64/sol
 	cp resources/configuration/default/sol-basic-configuration.json bin/linux_amd64/sol.json
 	cp resources/configuration/default/sol-basic-configuration.json bin/linux_arm64/sol.json
 	cp resources/configuration/default/sol-basic-configuration.json bin/linux_386/sol.json
 	cp resources/configuration/default/sol-basic-configuration.json bin/linux_arm/sol.json
 	cp resources/configuration/default/sol-basic-configuration.json bin/windows_amd64/sol.json
 	cp resources/configuration/default/sol-basic-configuration.json bin/windows_386/sol.json
+	cp resources/configuration/default/sol-basic-configuration.json bin/darwin_amd64/sol.json
+	cp resources/configuration/default/sol-basic-configuration.json bin/darwin_arm64/sol.json
 	cp resources/script/*.bat bin/windows_amd64
 	cp resources/script/*.bat bin/windows_386
 	cd bin/ 
@@ -66,6 +70,8 @@ distribution: install
 	zip -r -9 ${DISTRIBUTION_PACKAGE}.zip ./linux_arm/
 	zip -r -9 ${DISTRIBUTION_PACKAGE}.zip ./windows_amd64/
 	zip -r -9 ${DISTRIBUTION_PACKAGE}.zip ./windows_386/
+	zip -r -9 ${DISTRIBUTION_PACKAGE}.zip ./darwin_amd64/
+	zip -r -9 ${DISTRIBUTION_PACKAGE}.zip ./darwin_arm64/
 
 # DEV / Update GO modules
 mod: 
@@ -86,6 +92,8 @@ install: clean
 	GOARCH=amd64 GOOS=linux go install ${LDFLAGS} -a -tags netgo -installsuffix netgo ${PACKAGE}
 	GOARCH=arm64 GOOS=linux go install ${LDFLAGS} -a -tags netgo -installsuffix netgo ${PACKAGE}
 	GOARCH=arm GOOS=linux go install ${LDFLAGS} -a -tags netgo -installsuffix netgo ${PACKAGE}
+	GOARCH=amd64 GOOS=darwin go install ${LDFLAGS} ${PACKAGE}
+	GOARCH=arm64 GOOS=darwin go install ${LDFLAGS} ${PACKAGE}
 
 # DEV / Run docker
 docker:

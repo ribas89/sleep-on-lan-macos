@@ -1,0 +1,251 @@
+
+name: Build and release Sleep-On-LAN macos
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sleep-on-lan-release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Read version from Makefile
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Read VERSION from Makefile
+        id: read
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="$(awk -F= '
+            /^[[:space:]]*VERSION[[:space:]]*=/ {
+              gsub(/[[:space:]]/, "", $2)
+              print $2
+              exit
+            }
+          ' Makefile)"
+
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid VERSION in Makefile: ${VERSION}"
+            exit 1
+          fi
+
+          TAG="v${VERSION}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          echo "Release version: ${VERSION}"
+          echo "Release tag: ${TAG}"
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: version
+    runs-on: ubuntu-latest
+
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            platform: linux_amd64
+            binary: sol
+
+          - goos: linux
+            goarch: 386
+            platform: linux_386
+            binary: sol
+
+          - goos: linux
+            goarch: arm64
+            platform: linux_arm64
+            binary: sol
+
+          - goos: linux
+            goarch: arm
+            platform: linux_arm
+            binary: sol
+
+          - goos: windows
+            goarch: amd64
+            platform: windows_amd64
+            binary: sol.exe
+
+          - goos: windows
+            goarch: 386
+            platform: windows_386
+            binary: sol.exe
+
+          - goos: darwin
+            goarch: amd64
+            platform: macos_amd64
+            binary: sol
+
+          - goos: darwin
+            goarch: arm64
+            platform: macos_arm64
+            binary: sol
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+          cache: true
+          cache-dependency-path: src/go.sum
+
+      - name: Compile and package
+        shell: bash
+        working-directory: src
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          PLATFORM: ${{ matrix.platform }}
+          BINARY_NAME: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+
+          TAG="${RELEASE_TAG}"
+          VERSION="${RELEASE_VERSION}"
+          VERSION_LABEL="RELEASE"
+
+          BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          BUILD_COMMIT="$(git rev-parse HEAD)"
+          PACKAGE_DIR="../dist/${PLATFORM}"
+
+          mkdir -p "${PACKAGE_DIR}"
+
+          CGO_ENABLED=0 go build \
+            -trimpath \
+            -ldflags "-s -w -X main.BuildVersion=${VERSION} -X main.BuildVersionLabel=${VERSION_LABEL} -X main.BuildCommit=${BUILD_COMMIT} -X main.BuildCompilationTimestamp=${BUILD_TIME}" \
+            -o "${PACKAGE_DIR}/${BINARY_NAME}" \
+            .
+
+          cp ../resources/configuration/default/sol-basic-configuration.json \
+            "${PACKAGE_DIR}/sol.json"
+
+          if [[ "${GOOS}" == "windows" ]]; then
+            cp ../resources/script/*.bat "${PACKAGE_DIR}/"
+          fi
+
+          cat > "${PACKAGE_DIR}/README.txt" <<EOF
+          Sleep-On-LAN ${TAG}
+          Platform: ${PLATFORM}
+
+          Run the sol executable in this folder.
+          The included sol.json enables the default UDP:9 and HTTP:8009 listeners.
+          The HTTP sleep endpoint is http://<computer-ip>:8009/sleep
+          EOF
+
+          cd ../dist
+
+          zip -qr \
+            "${GITHUB_WORKSPACE}/SleepOnLAN_${TAG}_${PLATFORM}.zip" \
+            "${PLATFORM}"
+
+      - name: Upload platform package
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: SleepOnLAN_${{ needs.version.outputs.tag }}_${{ matrix.platform }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+
+    env:
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create or reuse lightweight Git tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_COMMIT="$(git rev-parse HEAD)"
+
+          if git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
+            TAG_COMMIT="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+
+            if [[ "${TAG_COMMIT}" != "${CURRENT_COMMIT}" ]]; then
+              echo "::error::Tag ${RELEASE_TAG} already exists on another commit."
+              echo "::error::Update VERSION in Makefile for a new release."
+              exit 1
+            fi
+
+            echo "Reusing existing tag ${RELEASE_TAG}"
+          else
+            # Create lightweight tag without Git identity
+            git tag "${RELEASE_TAG}"
+
+            # Push tag to GitHub
+            git push origin "refs/tags/${RELEASE_TAG}"
+
+            echo "Created and pushed tag ${RELEASE_TAG}"
+          fi
+
+      - name: Download all platform packages
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd release-assets
+          sha256sum ./*.zip > SHA256SUMS.txt
+
+      - name: Create GitHub Release and attach packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "::error::Release ${RELEASE_TAG} already exists."
+            echo "::error::Update VERSION in Makefile for a new release."
+            exit 1
+          fi
+
+          gh release create "${RELEASE_TAG}" \
+            release-assets/*.zip \
+            release-assets/SHA256SUMS.txt \
+            --title "${RELEASE_TAG}" \
+            --generate-notes \
+            --verify-tag
+
+          echo "Successfully published release ${RELEASE_TAG}"
